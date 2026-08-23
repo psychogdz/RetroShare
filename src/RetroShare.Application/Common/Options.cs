@@ -35,6 +35,16 @@ public sealed class StorageOptions
 
     /// <summary>Seconds a completed-but-uncommitted upload session may live before cleanup.</summary>
     public int UploadSessionTimeoutSeconds { get; set; } = 600;
+
+    /// <summary>Safety reserve kept free on the storage disk. Uploads are rejected before any
+    /// bytes are written when free space is below announced size + this reserve.</summary>
+    public long DiskReserveBytes { get; set; } = 100 * 1024 * 1024;
+
+    /// <summary>Disk usage at or above this percentage reports the "Warning" state.</summary>
+    public int DiskWarningThresholdPercent { get; set; } = 80;
+
+    /// <summary>Disk usage at or above this percentage reports the "Critical" state.</summary>
+    public int DiskCriticalThresholdPercent { get; set; } = 90;
 }
 
 /// <summary>Bootstrap/administration configuration bound from the "Seed" section.</summary>

@@ -1,3 +1,4 @@
+using System.IO;
 using System.Security.Claims;
 using Grpc.Core;
 using Microsoft.AspNetCore.Authorization;
@@ -104,6 +105,19 @@ public sealed class FileTransferGrpcService(
             }
 
             throw MapAppException(ex);
+        }
+        catch (IOException ex)
+        {
+            // The write path hit a filesystem failure (typically ENOSPC mid-stream);
+            // discard the partial blob and surface a clean, non-leaking message.
+            logger.LogError(ex, "gRPC upload failed with an I/O error (partial upload discarded)");
+            if (session is not null)
+            {
+                await fileService.DiscardUploadAsync(session);
+            }
+
+            throw new RpcException(new Status(StatusCode.ResourceExhausted,
+                "Insufficient storage space available."));
         }
         catch (Exception ex)
         {
@@ -217,6 +231,8 @@ public sealed class FileTransferGrpcService(
         ForbiddenException => new RpcException(new Status(StatusCode.PermissionDenied, ex.Message)),
         UnauthorizedException => new RpcException(new Status(StatusCode.Unauthenticated, ex.Message)),
         StorageLimitException => new RpcException(new Status(StatusCode.ResourceExhausted, ex.Message)),
+        InsufficientStorageException => new RpcException(new Status(StatusCode.ResourceExhausted,
+            "Insufficient storage space available.")),
         ShareAccessException sa => sa.ErrorCode switch
         {
             "SHARE_NOT_FOUND" => new RpcException(new Status(StatusCode.NotFound, sa.Message)),

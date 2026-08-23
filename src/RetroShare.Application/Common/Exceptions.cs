@@ -63,6 +63,24 @@ public sealed class StorageLimitException : AppException
         new($"Upload would exceed the storage quota of {quotaBytes:N0} bytes.", "QUOTA_EXCEEDED");
 }
 
+/// <summary>Upload rejected because the server does not have enough free disk space for the
+/// announced file size plus the configured safety reserve. Distinct from quota errors: this is
+/// about the machine, not the user's allowance.</summary>
+public sealed class InsufficientStorageException : AppException
+{
+    public InsufficientStorageException(long freeBytes, long requiredBytes)
+        : base("INSUFFICIENT_STORAGE",
+            $"Insufficient storage space available. Free: {freeBytes:N0} bytes, required: {requiredBytes:N0} bytes.")
+    {
+        FreeBytes = freeBytes;
+        RequiredBytes = requiredBytes;
+    }
+
+    public long FreeBytes { get; }
+
+    public long RequiredBytes { get; }
+}
+
 /// <summary>A share link exists but cannot currently be used (revoked, expired, exhausted,
 /// password-protected without a valid password, or its file was deleted).</summary>
 public sealed class ShareAccessException : AppException

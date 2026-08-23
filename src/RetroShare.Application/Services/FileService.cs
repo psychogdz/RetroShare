@@ -72,6 +72,15 @@ public sealed class FileService(
             throw StorageLimitException.QuotaExceeded(owner.StorageQuotaBytes);
         }
 
+        // Early rejection when the volume cannot hold the upload plus the safety reserve.
+        // A pre-flight check only — the write path still handles ENOSPC at runtime.
+        // Subtraction (not addition) keeps the comparison overflow-safe.
+        var freeDisk = await storage.GetFreeSpaceBytesAsync(ct);
+        if (freeDisk.HasValue && freeDisk.Value - declaredSize < _options.DiskReserveBytes)
+        {
+            throw new InsufficientStorageException(freeDisk.Value, declaredSize + Math.Min(_options.DiskReserveBytes, long.MaxValue - declaredSize));
+        }
+
         var file = new StoredFile
         {
             OwnerId = ownerId,

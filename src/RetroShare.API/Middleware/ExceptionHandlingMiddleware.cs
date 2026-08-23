@@ -65,6 +65,8 @@ public sealed class ExceptionHandlingMiddleware(
         NotFoundException => (StatusCodes.Status404NotFound, new ApiErrorResponse(ex.Message, ex.ErrorCode)),
         ConflictException => (StatusCodes.Status409Conflict, new ApiErrorResponse(ex.Message, ex.ErrorCode)),
         StorageLimitException => (StatusCodes.Status413PayloadTooLarge, new ApiErrorResponse(ex.Message, ex.ErrorCode)),
+        InsufficientStorageException => (StatusCodes.Status507InsufficientStorage,
+            new ApiErrorResponse("Insufficient storage space available.", ex.ErrorCode)),
         _ => (StatusCodes.Status500InternalServerError, new ApiErrorResponse("An unexpected error occurred.", "INTERNAL_ERROR")),
     };
 
