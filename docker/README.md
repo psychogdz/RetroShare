@@ -26,8 +26,13 @@ Back up the whole volume; restore is a copy back.
 ## Operational checklist
 
 - Set a unique `JWT_SECRET` (≥32 characters) — the app refuses to start in
-  production without one.
+  production without one, and rejects the known development placeholder secrets.
 - Change `ADMIN_PASSWORD` from the default — same refusal applies.
 - Put a TLS-terminating reverse proxy (nginx, Caddy, Traefik) in front; gRPC-Web
   works over plain HTTP/1.1, so no special proxy configuration is required.
+- When a proxy fronts the app, set `ForwardedHeaders__Enabled=true` so rate
+  limiting sees real client IPs. Only the proxies listed in
+  `ForwardedHeaders__KnownProxies` (loopback by default) are trusted to set
+  `X-Forwarded-*` headers; add your proxy's IP (e.g. the compose gateway or the
+  proxy container's address) when it does not connect from localhost.
 - Consider lowering `DEFAULT_QUOTA_BYTES` / `MAX_FILE_BYTES` to taste.

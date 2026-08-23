@@ -22,6 +22,13 @@ RUN dotnet publish src/RetroShare.API/RetroShare.API.csproj -c Release -o /app -
 
 FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS runtime
 WORKDIR /app
+
+# curl is only needed for the container healthcheck; the base image ships
+# neither curl nor wget.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=build /app .
 
 ENV ASPNETCORE_URLS=http://+:8080

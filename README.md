@@ -186,7 +186,7 @@ Everything is environment-variable overridable (`Section__Key`):
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `Jwt:Secret` | dev-only value | ≥32-byte signing secret (**required in production**) |
+| `Jwt:Secret` | none (dev value in `appsettings.Development.json`) | ≥32-byte signing secret (**required in production**; known dev placeholders are rejected) |
 | `Jwt:AccessTokenMinutes` / `RefreshTokenDays` | 15 / 7 | Token lifetimes |
 | `ConnectionStrings:Database` | `Data Source=retroshare.db` | SQLite connection |
 | `Storage:Root` | `storage` | Blob directory (per-user/per-file layout) |
@@ -194,6 +194,8 @@ Everything is environment-variable overridable (`Section__Key`):
 | `Storage:DefaultUserQuotaBytes` | 10 GiB | Quota for new users |
 | `Seed:Admin*` | see `.env.example` | Bootstrap administrator |
 | `Cors:AllowedOrigins` | empty (same-origin) | Extra allowed origins |
+| `ForwardedHeaders:Enabled` | `false` | Honor `X-Forwarded-*` behind a reverse proxy |
+| `ForwardedHeaders:KnownProxies` | loopback | Proxy IPs trusted to set forwarded headers |
 
 ## Docker
 

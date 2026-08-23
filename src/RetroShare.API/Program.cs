@@ -1,7 +1,9 @@
+using System.Net;
 using System.Text;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
@@ -142,6 +144,32 @@ try
                 .AllowAnyMethod()));
     }
 
+    // Forwarded headers (opt-in) for deployments behind a reverse proxy. Only the
+    // configured proxies are trusted; anything else is ignored, so a client cannot
+    // spoof X-Forwarded-For by talking to the app directly.
+    if (builder.Configuration.GetValue("ForwardedHeaders:Enabled", false))
+    {
+        builder.Services.Configure<ForwardedHeadersOptions>(options =>
+        {
+            options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+            options.KnownNetworks.Clear(); // trust nothing by default…
+            options.KnownProxies.Clear();
+            foreach (var proxy in builder.Configuration.GetSection("ForwardedHeaders:KnownProxies").Get<string[]>() ?? [])
+            {
+                if (IPAddress.TryParse(proxy, out var address))
+                {
+                    options.KnownProxies.Add(address); // …only explicitly configured proxies
+                }
+            }
+
+            if (options.KnownProxies.Count == 0)
+            {
+                options.KnownProxies.Add(IPAddress.Loopback); // nginx on the same host/container
+                options.KnownProxies.Add(IPAddress.IPv6Loopback);
+            }
+        });
+    }
+
     // Health checks: database + storage + gRPC service availability.
     builder.Services.AddHealthChecks()
         .AddCheck<DatabaseHealthCheck>("database")
@@ -159,6 +187,14 @@ try
                 "Set the Jwt__Secret environment variable to at least 32 characters in production.");
         }
 
+        // Known placeholder secrets are public in the repository; a production
+        // deployment using one of them would hand out forgeable tokens.
+        if (KnownDevJwtSecrets.All.Contains(jwt.Secret))
+        {
+            throw new InvalidOperationException(
+                "Jwt__Secret is a known development placeholder. Set a unique secret in production.");
+        }
+
         var seed = app.Configuration.GetSection(SeedOptions.SectionName).Get<SeedOptions>() ?? new SeedOptions();
         if (seed.AdminPassword == "ChangeMe!123")
         {
@@ -168,8 +204,14 @@ try
     }
 
     // ---------------------------------------------------------------------------
-// Middleware pipeline
-// ---------------------------------------------------------------------------
+    // Middleware pipeline
+    // ---------------------------------------------------------------------------
+    // Forwarded headers first so rate limiting and logs see the real client IP.
+    if (app.Configuration.GetValue("ForwardedHeaders:Enabled", false))
+    {
+        app.UseForwardedHeaders();
+    }
+
     app.UseMiddleware<ExceptionHandlingMiddleware>();
     app.UseSerilogRequestLogging();
 
@@ -181,7 +223,8 @@ try
     if (app.Configuration.GetValue("RateLimit:Enabled", true))
     {
         app.UseRateLimiter();
-    }    app.UseAuthentication();
+    }
+    app.UseAuthentication();
     app.UseAuthorization();
 
     // gRPC data plane (with gRPC-Web so browser JavaScript can stream too).
@@ -252,6 +295,18 @@ catch (Exception ex) when (ex is not HostAbortedException) // design-time host a
 finally
 {
     await Log.CloseAndFlushAsync();
+}
+
+/// <summary>Secrets that appear in this repository (dev appsettings, .env.example).
+/// They are public knowledge and must never sign production tokens.</summary>
+internal static class KnownDevJwtSecrets
+{
+    public static readonly string[] All =
+    [
+        "dev-only-secret-change-me-in-production-9f8a7b6c5d4e3f21", // historic appsettings.json value
+        "dev-only-secret-never-used-in-production-9f8a7b6c5d4e3f21", // appsettings.Development.json value
+        "change-me-to-a-long-random-string-min-32-chars",             // .env.example placeholder
+    ];
 }
 
 /// <summary>Marker for WebApplicationFactory in integration tests.</summary>
