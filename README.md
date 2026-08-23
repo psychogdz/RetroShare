@@ -14,9 +14,23 @@ Bootstrap and vanilla JavaScript.
 
 ## Screenshots
 
-> Add screenshots of the dashboard, the streaming upload dialog with live
-> progress/speed/ETA, the retro admin panel and a public share page here.
-> (_Placeholder section for published screenshots._)
+> To be added with the published release. Drop files into `docs/screenshots/`
+> and uncomment the embeds below.
+
+### Login
+<!-- ![Login](docs/screenshots/login.png) -->
+
+### Dashboard
+<!-- ![Dashboard](docs/screenshots/dashboard.png) -->
+
+### File manager
+<!-- ![File manager](docs/screenshots/files.png) -->
+
+### Share page
+<!-- ![Share page](docs/screenshots/share.png) -->
+
+### Admin panel
+<!-- ![Admin panel](docs/screenshots/admin.png) -->
 
 ## Features
 
@@ -177,8 +191,15 @@ dotnet run --project src/RetroShare.API
 ```
 
 First start creates `retroshare.db`, applies migrations, seeds permissions/roles and
-the admin account (`admin` / `ChangeMe!123` — development default; production refuses
-to boot with it).
+the bootstrap administrator.
+
+**Development seed credentials** — development only, never use in production:
+
+- Username: `admin`
+- Password: `ChangeMe!123`
+
+Production deployments require explicit secrets (see the configuration table and
+`.env.example`) and **refuse to boot** with these seed values.
 
 ### Configuration
 
@@ -196,6 +217,24 @@ Everything is environment-variable overridable (`Section__Key`):
 | `Cors:AllowedOrigins` | empty (same-origin) | Extra allowed origins |
 | `ForwardedHeaders:Enabled` | `false` | Honor `X-Forwarded-*` behind a reverse proxy |
 | `ForwardedHeaders:KnownProxies` | loopback | Proxy IPs trusted to set forwarded headers |
+
+## Security notes
+
+- **No secrets in source.** The base configuration carries no signing key; a
+  development-only secret lives in `appsettings.Development.json`. Production
+  requires `Jwt__Secret` (≥32 bytes) and rejects the known repository
+  placeholders outright.
+- **Passwords are never stored.** PBKDF2-SHA256 with per-hash salt; refresh
+  tokens are stored as SHA-256 hashes only and rotate on every use.
+- **Every file operation is authorized server-side** — ownership checks,
+  permission policies resolved live from the database, backend-enforced quotas,
+  filename sanitization, blocked extension/MIME lists, and path-traversal-safe
+  storage paths.
+- **Share links use 128-bit cryptographically random tokens**, with server-side
+  expiry, optional passwords (hashed), download limits and revocation.
+- **Rate limiting** on all endpoints (stricter on auth), safe error envelopes
+  that never leak stack traces, hashes or internal paths, and an auditable
+  activity log.
 
 ## Docker
 
@@ -234,6 +273,10 @@ upload/download round-trips and permission/ownership attack scenarios.
 - Per-folder sharing (currently single-file links)
 - Blob checksums (SHA-256) surfaced in the UI
 - Prometheus metrics endpoint alongside the health checks
+
+## Release notes
+
+- [v1.0.0](docs/RELEASE-v1.0.0.md) — first stable release
 
 ## License
 

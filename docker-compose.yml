@@ -13,6 +13,8 @@ services:
       Seed__AdminEmail: "${ADMIN_EMAIL:-admin@retroshare.local}"
       Storage__DefaultUserQuotaBytes: "${DEFAULT_QUOTA_BYTES:-10737418240}"
       Storage__MaxFileSizeBytes: "${MAX_FILE_BYTES:-2147483648}"
+      ForwardedHeaders__Enabled: "${FORWARDED_HEADERS_ENABLED:-false}"
+      ForwardedHeaders__KnownProxies__0: "${FORWARDED_HEADERS_KNOWN_PROXIES:-127.0.0.1}"
     volumes:
       - retroshare-data:/data
     restart: unless-stopped
