@@ -1,0 +1,17 @@
+bin/
+obj/
+.git/
+.github/
+docs/
+docker/
+*.db
+*.db-shm
+*.db-wal
+storage/
+logs/
+tests/*/bin/
+tests/*/obj/
+src/*/bin/
+src/*/obj/
+.env
+node_modules/

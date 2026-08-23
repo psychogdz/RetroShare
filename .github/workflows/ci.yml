@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Restore
+        run: dotnet restore RetroShare.sln
+
+      - name: Build
+        run: dotnet build RetroShare.sln --no-restore -c Release
+
+      - name: Test
+        run: dotnet test RetroShare.sln --no-build -c Release --logger "github;summary=true"
+
+      - name: Publish (build verification)
+        run: dotnet publish src/RetroShare.API/RetroShare.API.csproj -c Release -o publish --no-build
+
+      - name: Upload published app
+        uses: actions/upload-artifact@v4
+        with:
+          name: retroshare-publish
+          path: publish
+          retention-days: 7
+
+  docker:
+    name: Docker build
+    runs-on: ubuntu-latest
+    needs: build-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image (no push)
+        run: docker build -t retroshare:ci .
