@@ -44,8 +44,11 @@
                 body.innerHTML = '<tr><td colspan="7"><div class="rs-empty"><div class="rs-empty-icon">⇄</div>No share links yet. Create one from the Files page.</div></td></tr>';
             } else {
                 body.innerHTML = result.items.map((share) => {
+                    // Loose null checks: the API omits null properties (WhenWritingNull),
+                    // so absent values arrive as undefined.
                     const expired = share.isExpired;
-                    const exhausted = share.maxDownloads !== null && share.downloadCount >= share.maxDownloads;
+                    const limited = share.maxDownloads != null;
+                    const exhausted = limited && share.downloadCount >= share.maxDownloads;
                     const status = !share.isActive
                         ? '<span class="badge rs-badge-dim">revoked</span>'
                         : expired ? '<span class="badge rs-badge-red">expired</span>'
@@ -56,7 +59,7 @@
                             <div class="rs-filemeta">${formatBytes(share.fileSize)}</div></td>
                         <td><code style="font-size:.78rem">/s/${escapeHtml(share.token.slice(0, 10))}…</code></td>
                         <td>${share.hasPassword ? '<span class="badge rs-badge-cyan">password</span>' : '<span class="rs-filemeta">public</span>'}</td>
-                        <td>${share.downloadCount}${share.maxDownloads !== null ? ` / ${share.maxDownloads}` : ''}</td>
+                        <td>${share.downloadCount} / ${limited ? share.maxDownloads : '∞'}</td>
                         <td>${status}</td>
                         <td class="rs-filemeta">${formatDate(share.createdAt)}</td>
                         <td class="text-nowrap">
