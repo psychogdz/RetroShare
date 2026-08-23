@@ -14,23 +14,31 @@ Bootstrap and vanilla JavaScript.
 
 ## Screenshots
 
-> To be added with the published release. Drop files into `docs/screenshots/`
-> and uncomment the embeds below.
+All screenshots are captured from the running application.
 
 ### Login
-<!-- ![Login](docs/screenshots/login.png) -->
+![Login](docs/screenshots/login.png)
 
 ### Dashboard
-<!-- ![Dashboard](docs/screenshots/dashboard.png) -->
+![Dashboard](docs/screenshots/dashboard.png)
 
 ### File manager
-<!-- ![File manager](docs/screenshots/files.png) -->
+![File manager](docs/screenshots/files.png)
 
-### Share page
-<!-- ![Share page](docs/screenshots/share.png) -->
+### Upload with live transfer status
+![Upload with live transfer status](docs/screenshots/upload.png)
 
-### Admin panel
-<!-- ![Admin panel](docs/screenshots/admin.png) -->
+### Public share page (no login required)
+![Public share page](docs/screenshots/share.png)
+
+### Admin panel — system health
+![Admin panel — system health](docs/screenshots/admin.png)
+
+### Admin panel — users
+![Admin panel — users](docs/screenshots/admin-users.png)
+
+### Admin panel — roles & permissions
+![Admin panel — roles & permissions](docs/screenshots/admin-roles.png)
 
 ## Features
 
