@@ -12,13 +12,20 @@
     --rs-bg-raised: #0e1626;
     --rs-border: #1d2c45;
     --rs-border-bright: #2f4a6e;
+
+    /* Text tiers — every visible value must clear ~4.5:1 on the panel backgrounds
+       even under the CRT scanline overlay. dim is the metadata/secondary color. */
     --rs-text: #c7d3e3;
-    --rs-text-dim: #6d7f99;
+    --rs-text-bright: #e8f2ff;
+    --rs-text-dim: #8fa6c4;
+    --rs-text-disabled: #5b6b85;
+
     --rs-green: #4af0a0;
     --rs-green-dim: #1f7a55;
     --rs-cyan: #57c8e6;
     --rs-amber: #ffb347;
     --rs-red: #ff5f6e;
+    --rs-red-bright: #ff8494;
     --rs-purple: #a58cff;
     --rs-glow: 0 0 8px rgba(74, 240, 160, .35);
 
@@ -306,6 +313,10 @@ h1, h2, h3, h4, .rs-display {
 .rs-meter .rs-meter-fill.warn { background: repeating-linear-gradient(90deg, var(--rs-amber) 0 8px, #a86e1e 8px 12px); }
 .rs-meter .rs-meter-fill.full { background: repeating-linear-gradient(90deg, var(--rs-red) 0 8px, #7d2b34 8px 12px); }
 
+/* Monitoring gauges — aliases matching the disk-health states. */
+.rs-meter .rs-meter-fill-warning { background: repeating-linear-gradient(90deg, var(--rs-amber) 0 8px, #a86e1e 8px 12px); }
+.rs-meter .rs-meter-fill-critical { background: repeating-linear-gradient(90deg, var(--rs-red) 0 8px, #7d2b34 8px 12px); }
+
 .badge { border-radius: 0; font-weight: 600; }
 .rs-badge-green { background: rgba(74, 240, 160, .12); color: var(--rs-green); border: 1px solid var(--rs-green-dim); }
 .rs-badge-amber { background: rgba(255, 179, 71, .1); color: var(--rs-amber); border: 1px solid #8a5f22; }
@@ -402,7 +413,7 @@ h1, h2, h3, h4, .rs-display {
 .modal-content { background: var(--rs-bg-panel); border: 1px solid var(--rs-border-bright); border-radius: 0; box-shadow: 6px 6px 0 rgba(0,0,0,.6); }
 .modal-header, .modal-footer { border-color: var(--rs-border); }
 
-.pagination { --bs-pagination-bg: #101a2c; --bs-pagination-border-color: var(--rs-border-bright); --bs-pagination-color: var(--rs-text); --bs-pagination-hover-bg: #1d3050; --bs-pagination-hover-color: #fff; --bs-pagination-disabled-bg: #0a0f1a; --bs-pagination-disabled-color: #46536a; --bs-pagination-focus-color: var(--rs-cyan); --bs-pagination-focus-box-shadow: 0 0 0 2px rgba(87,200,230,.3); border-radius: 0; }
+.pagination { --bs-pagination-bg: #101a2c; --bs-pagination-border-color: var(--rs-border-bright); --bs-pagination-color: var(--rs-text); --bs-pagination-hover-bg: #1d3050; --bs-pagination-hover-color: #fff; --bs-pagination-disabled-bg: #0a0f1a; --bs-pagination-disabled-color: var(--rs-text-disabled); --bs-pagination-focus-color: var(--rs-cyan); --bs-pagination-focus-box-shadow: 0 0 0 2px rgba(87,200,230,.3); border-radius: 0; }
 .page-link { border-radius: 0 !important; }
 
 .dropdown-menu { background: var(--rs-bg-raised); border: 1px solid var(--rs-border-bright); border-radius: 0; box-shadow: 4px 4px 0 rgba(0,0,0,.6); }
@@ -434,7 +445,7 @@ h1, h2, h3, h4, .rs-display {
 .rs-dropzone:hover, .rs-dropzone.drag { border-color: var(--rs-green); background: rgba(74, 240, 160, .05); color: #e8f2ff; }
 
 .rs-empty { color: var(--rs-text-dim); text-align: center; padding: 2.5rem 1rem; }
-.rs-empty .rs-empty-icon { font-family: 'VT323', monospace; font-size: 2.4rem; color: #2a3a55; }
+.rs-empty .rs-empty-icon { font-family: 'VT323', monospace; font-size: 2.4rem; color: #3d527a; }
 
 code, .rs-code { background: #04060a; border: 1px solid var(--rs-border); padding: .1rem .4rem; color: var(--rs-amber); }
 
@@ -460,3 +471,41 @@ a { text-decoration: none; }
 ::-webkit-scrollbar-track { background: #060a12; }
 ::-webkit-scrollbar-thumb { background: #1d2c45; border: 1px solid #0a0f1a; }
 ::-webkit-scrollbar-thumb:hover { background: #2f4a6e; }
+
+/* --------------------------------------------------------------------------
+   Text theme system — semantic utilities + Bootstrap-safe overrides.
+   Bootstrap's own text utilities ship light-theme colors; remapping them here
+   means any current or future Bootstrap class stays readable on the CRT theme.
+   -------------------------------------------------------------------------- */
+.rs-text-ok { color: var(--rs-green); }
+.rs-text-warn { color: var(--rs-amber); }
+.rs-text-danger { color: var(--rs-red-bright); }
+.rs-text-info { color: var(--rs-cyan); }
+.rs-text-muted { color: var(--rs-text-dim); }
+.rs-text-disabled { color: var(--rs-text-disabled); }
+
+.text-muted, .text-secondary, .text-body { color: var(--rs-text-dim) !important; }
+.text-success { color: var(--rs-green) !important; }
+.text-danger { color: var(--rs-red-bright) !important; }
+.text-warning { color: var(--rs-amber) !important; }
+.text-info { color: var(--rs-cyan) !important; }
+.text-dark { color: var(--rs-text) !important; }
+.text-white { color: #fff !important; }
+
+.form-text { color: var(--rs-text-dim); }
+small, .small { color: var(--rs-text-dim); }
+.form-control::placeholder, .form-select::placeholder { color: var(--rs-text-disabled); }
+.form-control:disabled, .form-select:disabled { color: var(--rs-text-disabled); background: var(--rs-bg); }
+.btn:disabled, .btn.disabled { color: var(--rs-text-disabled); }
+.dropdown-item.disabled, .dropdown-item:disabled { color: var(--rs-text-disabled); }
+.page-link.disabled { color: var(--rs-text-disabled); }
+.table { caption-side: bottom; }
+.table caption { color: var(--rs-text-dim); }
+
+.alert-success { background: rgba(74, 240, 160, .08); border: 1px solid var(--rs-green-dim); color: var(--rs-green); border-radius: 0; }
+.alert-danger { background: rgba(255, 95, 110, .08); border: 1px solid #7d2b34; color: var(--rs-red-bright); border-radius: 0; }
+.alert-warning { background: rgba(255, 179, 71, .08); border: 1px solid #8a5f22; color: var(--rs-amber); border-radius: 0; }
+.alert-info { background: rgba(87, 200, 230, .08); border: 1px solid #1e586d; color: var(--rs-cyan); border-radius: 0; }
+
+.modal-title { color: var(--rs-text-bright); }
+.modal-body { color: var(--rs-text); }
