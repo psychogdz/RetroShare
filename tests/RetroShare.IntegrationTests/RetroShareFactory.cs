@@ -14,7 +14,7 @@ namespace RetroShare.IntegrationTests;
 /// database with a kept-open connection and a temporary storage root. Each factory uses a
 /// uniquely named shared-cache in-memory database so concurrent factories never share
 /// state (SQLite connection pooling would otherwise hand the same in-memory DB around).</summary>
-public sealed class RetroShareFactory : WebApplicationFactory<Program>
+public class RetroShareFactory : WebApplicationFactory<Program>
 {
     private readonly SqliteConnection _connection =
         new($"Data Source=file:rsit_{Guid.NewGuid():N}?mode=memory&cache=shared");

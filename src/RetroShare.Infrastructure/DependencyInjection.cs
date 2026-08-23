@@ -78,6 +78,7 @@ public static class DependencyInjection
         services.AddScoped<IPermissionChecker, PermissionChecker>();
 
         services.AddSingleton<IFileStorage, LocalFileStorage>();
+        services.AddSingleton<ISystemInfoProvider, Monitoring.SystemInfoProvider>();
         services.AddScoped<DbSeeder>();
 
         return services;

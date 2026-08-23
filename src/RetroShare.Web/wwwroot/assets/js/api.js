@@ -167,5 +167,7 @@ export const api = {
     deleteRole: (id) => request(`/api/roles/${id}`, { method: 'DELETE' }),
     permissions: () => request('/api/permissions'),
 
+    systemMonitor: () => request('/api/system/monitor'),
+
     adminFiles: (qs = '') => request(`/api/files/all${qs}`),
 };

@@ -36,6 +36,7 @@ public static class Permissions
     public const string PermissionsView = "permissions.view";
 
     public const string SystemManage = "system.manage";
+    public const string SystemMonitor = "system.monitor";
 
     /// <summary>All permissions with display metadata, used for database seeding and the
     /// admin UI. The list is the single source of truth — nothing else defines permissions.</summary>
@@ -73,6 +74,7 @@ public static class Permissions
         (PermissionsView, "permissions", "View the permission catalog"),
 
         (SystemManage, "system", "Manage system configuration and statistics"),
+        (SystemMonitor, "system", "View live server resource monitoring"),
     ];
 
     /// <summary>Permissions granted to the seeded baseline "User" role.</summary>

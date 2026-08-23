@@ -12,17 +12,25 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script type="module">
-        import { initShell } from '/assets/js/app.js';
+        import { initShell, hasPermission } from '/assets/js/app.js';
         import { api } from '/assets/js/api.js';
         import { confirmDialog, debounce, escapeHtml, fileIcon, formatBytes, formatDate, toast } from '/assets/js/ui.js';
 
-        const user = await initShell({ permission: 'system.manage' });
+        const user = await initShell();
         if (!user) throw new Error('unauthenticated');
+        // The panel itself is reachable with either administration right; individual
+        // tabs rely on the server-side permission policies for their data.
+        if (!hasPermission(user, 'system.manage') && !hasPermission(user, 'system.monitor')) {
+            window.location.href = '/dashboard.html';
+            throw new Error('forbidden');
+        }
+        const canMonitor = hasPermission(user, 'system.monitor');
 
         document.getElementById('page').innerHTML = `
             <h2 class="mb-3">Admin Panel</h2>
             <ul class="nav nav-tabs mb-3" role="tablist">
                 <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-system">System</a></li>
+                ${canMonitor ? '<li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-monitor">Monitor</a></li>' : ''}
                 <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-users">Users</a></li>
                 <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-roles">Roles</a></li>
                 <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-permissions">Permissions</a></li>
@@ -32,6 +40,7 @@
             </ul>
             <div class="tab-content">
                 <div class="tab-pane fade show active" id="tab-system"></div>
+                <div class="tab-pane fade" id="tab-monitor"></div>
                 <div class="tab-pane fade" id="tab-users"></div>
                 <div class="tab-pane fade" id="tab-roles"></div>
                 <div class="tab-pane fade" id="tab-permissions"></div>
@@ -66,7 +75,7 @@
                     <div class="rs-panel-title">RECENT SYSTEM ACTIVITY</div>
                     <div class="rs-terminal">
                         ${stats.recentActivity.map((entry) =>
-                            `<div><span style="color:#6d7f99">[${formatDate(entry.createdAt)}]</span> ${entry.username ? escapeHtml(entry.username) + ': ' : ''}${escapeHtml(entry.description)}</div>`).join('')}
+                            `<div><span class="rs-text-muted">[${formatDate(entry.createdAt)}]</span> ${entry.username ? escapeHtml(entry.username) + ': ' : ''}${escapeHtml(entry.description)}</div>`).join('')}
                     </div>
                 </div>`;
         }
@@ -371,7 +380,7 @@
                                     <td><div class="rs-filename">${escapeHtml(share.fileName)}</div><div class="rs-filemeta">${formatBytes(share.fileSize)}</div></td>
                                     <td><code style="font-size:.78rem">${escapeHtml(share.token.slice(0, 10))}…</code></td>
                                     <td>${share.hasPassword ? '<span class="badge rs-badge-cyan">password</span>' : '<span class="rs-filemeta">public</span>'}</td>
-                                    <td class="rs-filemeta">${share.downloadCount}${share.maxDownloads !== null ? ` / ${share.maxDownloads}` : ''}</td>
+                                    <td class="rs-filemeta">${share.downloadCount} / ${share.maxDownloads != null ? share.maxDownloads : '∞'}</td>
                                     <td>${share.isActive ? '<span class="badge rs-badge-green">active</span>' : '<span class="badge rs-badge-dim">revoked</span>'}</td>
                                     <td class="rs-filemeta">${formatDate(share.createdAt)}</td>
                                     <td>${share.isActive ? `<button class="btn btn-sm btn-danger rs-admin-revoke" data-id="${share.id}">Revoke</button>` : ''}</td>
@@ -393,8 +402,91 @@
             document.getElementById('tab-activity').innerHTML = `
                 <div class="rs-terminal" style="min-height:300px">
                     ${result.items.map((entry) =>
-                        `<div><span style="color:#6d7f99">[${formatDate(entry.createdAt)}]</span> ${entry.username ? escapeHtml(entry.username) + ' — ' : ''}${escapeHtml(entry.description)} <span style="color:#46536a">(${entry.action})</span></div>`).join('')}
+                        `<div><span class="rs-text-muted">[${formatDate(entry.createdAt)}]</span> ${entry.username ? escapeHtml(entry.username) + ' — ' : ''}${escapeHtml(entry.description)} <span class="rs-text-disabled">(${entry.action})</span></div>`).join('')}
                 </div>`;
+        }
+
+        /* ------------------------------ monitor ------------------------------ */
+        // Live server resource monitoring (permission: system.monitor). Values poll
+        // every 5 s while the tab is visible; the endpoint is cheap and cached
+        // server-side so this is safe on 1-CPU VPS machines.
+        let monitorUpdatedAt = null;
+
+        function monitorGauge(label, percent, detail, state = 'ok') {
+            const percentText = Number.isFinite(percent) ? `${percent.toFixed(1)}%` : '—';
+            const fillClass = state === 'critical' ? 'rs-meter-fill-critical'
+                : state === 'warning' ? 'rs-meter-fill-warning' : '';
+            return `<div class="rs-panel">
+                <div class="d-flex justify-content-between align-items-baseline flex-wrap gap-2">
+                    <div class="rs-panel-title mb-0" style="border:none">${label}</div>
+                    <div class="rs-stat-value">${percentText}</div>
+                </div>
+                <div class="rs-meter my-2"><div class="rs-meter-fill ${fillClass}" style="width:${Math.min(100, Number.isFinite(percent) ? percent : 0)}%"></div></div>
+                <div class="rs-filemeta">${detail}</div>
+            </div>`;
+        }
+
+        function formatUptime(seconds) {
+            if (!Number.isFinite(seconds) || seconds < 0) return '—';
+            const d = Math.floor(seconds / 86400);
+            const h = Math.floor((seconds % 86400) / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            if (d > 0) return `${d}d ${h}h ${m}m`;
+            if (h > 0) return `${h}h ${m}m`;
+            return `${m}m`;
+        }
+
+        function diskStateBadge(state) {
+            if (state === 'Critical') return '<span class="badge rs-badge-red">CRITICAL</span>';
+            if (state === 'Warning') return '<span class="badge rs-badge-amber">WARNING</span>';
+            return '<span class="badge rs-badge-green">HEALTHY</span>';
+        }
+
+        function renderMonitor(m) {
+            const diskStateClass = m.diskState === 'Critical' ? 'critical'
+                : m.diskState === 'Warning' ? 'warning' : 'ok';
+            const tab = document.getElementById('tab-monitor');
+            tab.innerHTML = `
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                    <div class="rs-filemeta">live — updates every 5 s</div>
+                    <div class="rs-filemeta" id="monitor-updated">Last updated: …</div>
+                </div>
+                <div class="row g-3 mb-3">
+                    <div class="col-12 col-lg-4">${monitorGauge('CPU', m.cpuUsagePercent,
+                        m.cpuUsagePercent != null ? 'processor load across all cores' : 'not available on this platform')}</div>
+                    <div class="col-12 col-lg-4">${monitorGauge('RAM', m.ramUsagePercent,
+                        m.ramTotalBytes != null
+                            ? `${formatBytes(m.ramUsedBytes)} used / ${formatBytes(m.ramTotalBytes)}`
+                            : 'not available on this platform')}</div>
+                    <div class="col-12 col-lg-4">${monitorGauge('DISK', m.diskUsagePercent,
+                        `${diskStateBadge(m.diskState)} ${formatBytes(m.diskFreeBytes)} free / ${formatBytes(m.diskTotalBytes)} · warn ≥ ${m.diskWarningThresholdPercent}% · crit ≥ ${m.diskCriticalThresholdPercent}%`,
+                        diskStateClass)}</div>
+                </div>
+                <div class="row g-3">
+                    <div class="col-6 col-md-3"><div class="rs-stat"><div class="rs-stat-value">${formatUptime(m.uptimeSeconds)}</div><div class="rs-stat-label">Server uptime</div></div></div>
+                    <div class="col-6 col-md-3"><div class="rs-stat"><div class="rs-stat-value">${m.fileCount}</div><div class="rs-stat-label">Stored files</div></div></div>
+                    <div class="col-6 col-md-3"><div class="rs-stat"><div class="rs-stat-value">${formatBytes(m.storedBytes)}</div><div class="rs-stat-label">Stored bytes (logical)</div></div></div>
+                    <div class="col-6 col-md-3"><div class="rs-stat"><div class="rs-stat-value">${formatBytes(m.storageDirectoryBytes)}</div><div class="rs-stat-label">Storage directory</div></div></div>
+                    <div class="col-6 col-md-3"><div class="rs-stat"><div class="rs-stat-value">${m.databaseSizeBytes != null ? formatBytes(m.databaseSizeBytes) : '—'}</div><div class="rs-stat-label">Database size</div></div></div>
+                </div>`;
+            monitorUpdatedAt = Date.now();
+        }
+
+        async function refreshMonitor() {
+            try {
+                renderMonitor(await api.systemMonitor());
+            } catch (err) {
+                const tab = document.getElementById('tab-monitor');
+                tab.innerHTML = `<div class="rs-panel"><div class="rs-panel-title">MONITOR</div>
+                    <div class="rs-empty">Could not load monitoring data: ${escapeHtml(err.message)}</div></div>`;
+            }
+        }
+
+        function tickMonitorAge() {
+            const el = document.getElementById('monitor-updated');
+            if (el && monitorUpdatedAt) {
+                el.textContent = `Last updated: ${Math.max(0, Math.round((Date.now() - monitorUpdatedAt) / 1000))} s ago`;
+            }
         }
 
         // Lazy-load tabs on first activation so the initial paint stays fast.
@@ -404,10 +496,20 @@
             'tab-activity': loadActivity,
         };
         const loaded = new Set();
+        let monitorPollTimer = null;
         document.querySelector('#page .nav-tabs').addEventListener('shown.bs.tab', (event) => {
             const id = event.target.getAttribute('href').slice(1);
+            if (id === 'tab-monitor') {
+                if (monitorPollTimer) clearInterval(monitorPollTimer);
+                refreshMonitor();
+                monitorPollTimer = setInterval(refreshMonitor, 5000);
+            } else if (monitorPollTimer) {
+                clearInterval(monitorPollTimer);
+                monitorPollTimer = null;
+            }
             loaders[id]?.();
         });
+        setInterval(tickMonitorAge, 1000);
         loadSystem(); // default tab
     </script>
 </body>
