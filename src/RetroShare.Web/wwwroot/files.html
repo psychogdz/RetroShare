@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>My Files — RetroShare</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/assets/css/retro.css" rel="stylesheet">
+</head>
+<body>
+    <div id="shell"></div>
+
+    <template id="transfer-row">
+        <div class="rs-transfer mb-2">
+            <div class="d-flex justify-content-between align-items-start gap-2 mb-1 flex-wrap">
+                <div class="rs-transfer-title"></div>
+                <div class="d-flex gap-1"></div>
+            </div>
+            <div class="rs-progress mb-1"><div class="rs-progress-fill" style="width:0%"></div></div>
+            <div class="rs-transfer-stats d-flex gap-3 flex-wrap"></div>
+        </div>
+    </template>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script type="module">
+        import { initShell, hasPermission } from '/assets/js/app.js';
+        import { api } from '/assets/js/api.js';
+        import { uploadFile, downloadFile } from '/assets/js/grpc.js';
+        import {
+            confirmDialog, debounce, escapeHtml, fileIcon, formatBytes, formatDate,
+            formatEta, formatSpeed, SpeedTracker, toast,
+        } from '/assets/js/ui.js';
+
+        const user = await initShell({ permission: 'files.view' });
+        if (!user) throw new Error('unauthenticated');
+
+        const canUpload = hasPermission(user, 'files.upload');
+        const canRename = hasPermission(user, 'files.rename');
+        const canDelete = hasPermission(user, 'files.delete');
+        const canShare = hasPermission(user, 'shares.create');
+        const canFolders = hasPermission(user, 'folders.create');
+
+        const state = { folderId: null, search: '', type: '', sort: 'createdAt', ascending: false, page: 1, pageSize: 24 };
+        const page = document.getElementById('page');
+
+        page.innerHTML = `
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                <h2 class="mb-0">My Files</h2>
+                <div class="d-flex gap-2">
+                    ${canFolders ? '<button class="btn btn-secondary btn-sm" id="new-folder-btn">+ Folder</button>' : ''}
+                    ${canUpload ? '<button class="btn btn-primary btn-sm" id="upload-btn">▲ Upload</button>' : ''}
+                </div>
+            </div>
+
+            ${canUpload ? `
+            <div class="rs-panel mb-3" id="upload-panel" style="display:none">
+                <div class="rs-dropzone" id="dropzone">
+                    <div class="rs-display" style="font-size:1.4rem">DROP FILES HERE</div>
+                    <div class="rs-filemeta">or click to choose — streamed over gRPC, no size surprises</div>
+                </div>
+                <input type="file" id="file-input" multiple hidden>
+                <div class="mt-3" id="transfers"></div>
+            </div>` : ''}
+
+            <div class="rs-panel mb-3">
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-4">
+                        <label class="form-label" for="search">Search</label>
+                        <input class="form-control form-control-sm" id="search" placeholder="filename…" maxlength="128">
+                    </div>
+                    <div class="col-6 col-md-2">
+                        <label class="form-label" for="type">Type</label>
+                        <select class="form-select form-select-sm" id="type">
+                            <option value="">all</option>
+                            <option value="image">image</option>
+                            <option value="document">document</option>
+                            <option value="video">video</option>
+                            <option value="audio">audio</option>
+                            <option value="archive">archive</option>
+                            <option value="other">other</option>
+                        </select>
+                    </div>
+                    <div class="col-6 col-md-2">
+                        <label class="form-label" for="sort">Sort by</label>
+                        <select class="form-select form-select-sm" id="sort">
+                            <option value="createdAt">date</option>
+                            <option value="name">name</option>
+                            <option value="size">size</option>
+                            <option value="downloads">downloads</option>
+                        </select>
+                    </div>
+                    <div class="col-6 col-md-2">
+                        <button class="btn btn-secondary btn-sm w-100" id="order-btn">↓ desc</button>
+                    </div>
+                    <div class="col-6 col-md-2 text-md-end">
+                        <span class="rs-filemeta" id="count-label"></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="rs-crumb mb-3" id="breadcrumbs"></div>
+            <div id="folders-row" class="row g-2 mb-3"></div>
+            <div id="files-area"></div>
+            <div class="d-flex justify-content-center mt-3" id="pagination"></div>
+        `;
+
+        // ------------------------------------------------------------------
+        // Uploads (gRPC streaming with progress / speed / ETA / cancel / retry)
+        // ------------------------------------------------------------------
+        function enqueueUpload(file) {
+            const panel = document.getElementById('upload-panel');
+            panel.style.display = '';
+            const template = document.getElementById('transfer-row');
+            const row = template.content.firstElementChild.cloneNode(true);
+            row.querySelector('.rs-transfer-title').textContent = file.name;
+            row.querySelector('.rs-transfer-stats').innerHTML =
+                `<span>queued…</span><span>${formatBytes(file.size)}</span>`;
+            document.getElementById('transfers').prepend(row);
+
+            const controller = { abort: null };
+            const actions = row.querySelector('.rs-transfer .d-flex.gap-1');
+            const run = async () => {
+                const fill = row.querySelector('.rs-progress-fill');
+                fill.className = 'rs-progress-fill';
+                fill.style.width = '0%';
+                actions.innerHTML = '';
+                row.querySelector('.rs-transfer-stats').innerHTML = `<span>connecting…</span><span>${formatBytes(file.size)}</span>`;
+
+                const abort = new AbortController();
+                controller.abort = abort;
+                const cancelBtn = document.createElement('button');
+                cancelBtn.className = 'btn btn-danger btn-sm';
+                cancelBtn.textContent = '✖ Cancel';
+                cancelBtn.onclick = () => abort.abort();
+                actions.appendChild(cancelBtn);
+
+                const tracker = new SpeedTracker();
+                const startedAt = performance.now();
+                try {
+                    const result = await uploadFile(file, {
+                        folderId: state.folderId,
+                        signal: abort.signal,
+                        onProgress: (loaded, total) => {
+                            tracker.update(loaded);
+                            const percent = total ? (loaded / total * 100) : 100;
+                            fill.style.width = `${percent.toFixed(1)}%`;
+                            const elapsed = (performance.now() - startedAt) / 1000;
+                            const speed = tracker.bytesPerSecond;
+                            const remaining = speed > 0 ? (total - loaded) / speed : Infinity;
+                            row.querySelector('.rs-transfer-stats').innerHTML =
+                                `<span>${formatBytes(loaded)} / ${formatBytes(total)}</span>` +
+                                `<span>${percent.toFixed(0)}%</span>` +
+                                `<span>speed ${formatSpeed(speed)}</span>` +
+                                `<span>eta ${formatEta(remaining)}</span>`;
+                        },
+                    });
+                    fill.classList.add('done');
+                    fill.style.width = '100%';
+                    actions.innerHTML = '';
+                    row.querySelector('.rs-transfer-stats').innerHTML =
+                        `<span>done ✓ ${formatBytes(result.totalBytes)}</span><span>id ${result.fileId.slice(0, 8)}…</span>`;
+                    toast(`Uploaded ${file.name}`);
+                    refresh();
+                } catch (err) {
+                    if (abort.signal.aborted) {
+                        fill.classList.add('error');
+                        actions.innerHTML = '';
+                        row.querySelector('.rs-transfer-stats').innerHTML = '<span>cancelled</span>';
+                        return;
+                    }
+                    fill.classList.add('error');
+                    row.querySelector('.rs-transfer-stats').innerHTML = `<span style="color:var(--rs-red)">error: ${escapeHtml(err.message)}</span>`;
+                    const retry = document.createElement('button');
+                    retry.className = 'btn btn-secondary btn-sm';
+                    retry.textContent = '↻ Retry';
+                    retry.onclick = () => run();
+                    actions.innerHTML = '';
+                    actions.appendChild(retry);
+                }
+            };
+            run();
+        }
+
+        if (canUpload) {
+            const dropzone = document.getElementById('dropzone');
+            const input = document.getElementById('file-input');
+            dropzone.addEventListener('click', () => input.click());
+            dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('drag'); });
+            dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
+            dropzone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropzone.classList.remove('drag');
+                [...e.dataTransfer.files].forEach(enqueueUpload);
+            });
+            input.addEventListener('change', () => {
+                [...input.files].forEach(enqueueUpload);
+                input.value = '';
+            });
+            document.getElementById('upload-btn').addEventListener('click', () => {
+                const panel = document.getElementById('upload-panel');
+                panel.style.display = panel.style.display === 'none' ? '' : 'none';
+            });
+        }
+
+        // ------------------------------------------------------------------
+        // Listing
+        // ------------------------------------------------------------------
+        async function refresh() {
+            const params = new URLSearchParams();
+            if (state.folderId && !state.search) params.set('folderId', state.folderId);
+            params.set('search', state.search);
+            if (state.type) params.set('type', state.type);
+            params.set('sort', state.sort);
+            params.set('ascending', state.ascending);
+            params.set('page', state.page);
+            params.set('pageSize', state.pageSize);
+
+            const [contents, allFolders] = await Promise.all([
+                api.folderContents(`?${params}`),
+                api.folders(),
+            ]);
+            render(contents, allFolders);
+        }
+
+        function render(contents, allFolders) {
+            const crumbs = document.getElementById('breadcrumbs');
+            crumbs.innerHTML = `<a href="/files.html">◧ root</a>` + contents.breadcrumbs
+                .slice(1)
+                .map((crumb) => ` <span>›</span> <a href="/files.html?folder=${crumb.id}">${escapeHtml(crumb.name)}</a>`)
+                .join('');
+
+            const foldersRow = document.getElementById('folders-row');
+            const subfolders = contents.folders;
+            foldersRow.innerHTML = subfolders.length && !state.search ? subfolders.map((folder) => `
+                <div class="col-6 col-md-4 col-xl-3">
+                    <div class="rs-filecard align-items-center">
+                        <span class="rs-fileicon" style="background:var(--rs-amber)">DIR</span>
+                        <div class="flex-grow-1 min-w-0">
+                            <a class="rs-filename d-block text-truncate" href="/files.html?folder=${folder.id}" style="color:#e8f2ff">${escapeHtml(folder.name)}</a>
+                            <div class="rs-filemeta">${formatDate(folder.createdAt)}</div>
+                        </div>
+                        <div class="dropdown">
+                            <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="dropdown">⋯</button>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li><a class="dropdown-item rs-rename-folder" data-id="${folder.id}" data-name="${escapeHtml(folder.name)}" href="#">Rename</a></li>
+                                <li><a class="dropdown-item rs-move-folder" data-id="${folder.id}" href="#">Move</a></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><a class="dropdown-item text-danger rs-delete-folder" data-id="${folder.id}" data-name="${escapeHtml(folder.name)}" href="#">Delete</a></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>`).join('') : '';
+
+            const filesArea = document.getElementById('files-area');
+            const files = contents.files;
+            document.getElementById('count-label').textContent =
+                `${files.total} file${files.total === 1 ? '' : 's'}`;
+
+            if (files.items.length === 0) {
+                filesArea.innerHTML = `<div class="rs-empty">
+                    <div class="rs-empty-icon">[ ]</div>
+                    ${state.search ? 'No files match your search.' : canUpload ? 'Nothing here yet — drop some files above.' : 'No files yet.'}
+                </div>`;
+            } else {
+                filesArea.innerHTML = `<div class="row g-2">${files.items.map((file) => `
+                    <div class="col-12 col-md-6 col-xl-4">
+                        <div class="rs-filecard">
+                            ${fileIcon(file.extension)}
+                            <div class="flex-grow-1 min-w-0">
+                                <div class="rs-filename">${escapeHtml(file.name)}</div>
+                                <div class="rs-filemeta">
+                                    ${formatBytes(file.size)} · ${formatDate(file.createdAt)} · ▼ ${file.downloadCount}
+                                    ${file.activeShareCount ? ` · <span class="badge rs-badge-green">${file.activeShareCount} shared</span>` : ''}
+                                </div>
+                            </div>
+                            <div class="dropdown">
+                                <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="dropdown">⋯</button>
+                                <ul class="dropdown-menu dropdown-menu-end">
+                                    <li><a class="dropdown-item rs-download" data-id="${file.id}" href="#">▼ Download</a></li>
+                                    ${canShare ? `<li><a class="dropdown-item rs-share" data-id="${file.id}" data-name="${escapeHtml(file.name)}" href="#">⇄ Share link…</a></li>` : ''}
+                                    <li><a class="dropdown-item rs-details" data-id="${file.id}" href="#">ℹ Details</a></li>
+                                    ${canRename ? `<li><a class="dropdown-item rs-rename" data-id="${file.id}" data-name="${escapeHtml(file.name)}" href="#">Rename</a></li>` : ''}
+                                    <li><a class="dropdown-item rs-move" data-id="${file.id}" href="#">Move to folder…</a></li>
+                                    <li><hr class="dropdown-divider"></li>
+                                    ${canDelete ? `<li><a class="dropdown-item text-danger rs-delete" data-id="${file.id}" data-name="${escapeHtml(file.name)}" href="#">♲ Move to trash</a></li>` : ''}
+                                </ul>
+                            </div>
+                        </div>
+                    </div>`).join('')}</div>`;
+            }
+
+            // Pagination
+            const pagination = document.getElementById('pagination');
+            if (files.totalPages <= 1) {
+                pagination.innerHTML = '';
+            } else {
+                const button = (target, label, disabled, active) =>
+                    `<li class="page-item ${disabled ? 'disabled' : ''} ${active ? 'active' : ''}">
+                        <a class="page-link" href="#" data-page="${target}">${label}</a></li>`;
+                let html = button(state.page - 1, '‹', !files.hasPrevious, false);
+                const start = Math.max(1, state.page - 2);
+                const end = Math.min(files.totalPages, start + 4);
+                for (let p = start; p <= end; p++) html += button(p, p, false, p === state.page);
+                html += button(state.page + 1, '›', !files.hasNext, false);
+                pagination.innerHTML = `<ul class="pagination mb-0">${html}</ul>`;
+            }
+
+            bindActions(allFolders);
+        }
+
+        function bindActions(allFolders) {
+            document.getElementById('pagination').querySelectorAll('a[data-page]').forEach((link) => {
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    state.page = Number(link.dataset.page);
+                    refresh();
+                });
+            });
+
+            page.querySelectorAll('.rs-download').forEach((el) => el.addEventListener('click', async (e) => {
+                e.preventDefault();
+                const id = el.dataset.id;
+                el.textContent = '▼ Streaming…';
+                try {
+                    const result = await downloadFile({ fileId: id, onProgress: () => {} });
+                    toast(`Downloaded ${result.fileName} (${formatBytes(result.size)})`);
+                } catch (err) {
+                    toast(err.message, 'err');
+                }
+                el.textContent = '▼ Download';
+            }));
+
+            page.querySelectorAll('.rs-delete').forEach((el) => el.addEventListener('click', async (e) => {
+                e.preventDefault();
+                if (!await confirmDialog('Move to trash', `Move <b>${escapeHtml(el.dataset.name)}</b> to the trash? You can restore it later.`, { danger: true, confirmLabel: 'Move to trash' })) return;
+                try {
+                    await api.deleteFile(el.dataset.id);
+                    toast('Moved to trash');
+                    refresh();
+                } catch (err) { toast(err.message, 'err'); }
+            }));
+
+            page.querySelectorAll('.rs-rename').forEach((el) => el.addEventListener('click', async (e) => {
+                e.preventDefault();
+                const name = prompt('New file name:', el.dataset.name);
+                if (!name || name === el.dataset.name) return;
+                try {
+                    await api.renameFile(el.dataset.id, name);
+                    toast('File renamed');
+                    refresh();
+                } catch (err) { toast(err.message, 'err'); }
+            }));
+
+            page.querySelectorAll('.rs-move').forEach((el) => el.addEventListener('click', (e) => {
+                e.preventDefault();
+                showMoveDialog('Move file', async (folderId) => {
+                    await api.moveFile(el.dataset.id, folderId);
+                    toast('File moved');
+                    refresh();
+                }, allFolders);
+            }));
+
+            page.querySelectorAll('.rs-share').forEach((el) => el.addEventListener('click', (e) => {
+                e.preventDefault();
+                showShareDialog(el.dataset.id, el.dataset.name);
+            }));
+
+            page.querySelectorAll('.rs-details').forEach((el) => el.addEventListener('click', async (e) => {
+                e.preventDefault();
+                const file = await api.file(el.dataset.id);
+                alert([
+                    `Name: ${file.name}`,
+                    `Size: ${formatBytes(file.size)}`,
+                    `Type: ${file.mimeType}`,
+                    `Created: ${formatDate(file.createdAt)}`,
+                    `Updated: ${formatDate(file.updatedAt)}`,
+                    `Downloads: ${file.downloadCount}`,
+                    `Active shares: ${file.activeShareCount}`,
+                    `In trash: ${file.isDeleted ? 'yes' : 'no'}`,
+                ].join('\n'));
+            }));
+
+            page.querySelectorAll('.rs-rename-folder').forEach((el) => el.addEventListener('click', async (e) => {
+                e.preventDefault();
+                const name = prompt('New folder name:', el.dataset.name);
+                if (!name || name === el.dataset.name) return;
+                try {
+                    await api.renameFolder(el.dataset.id, name);
+                    toast('Folder renamed');
+                    refresh();
+                } catch (err) { toast(err.message, 'err'); }
+            }));
+
+            page.querySelectorAll('.rs-move-folder').forEach((el) => el.addEventListener('click', (e) => {
+                e.preventDefault();
+                showMoveDialog('Move folder', async (folderId) => {
+                    await api.moveFolder(el.dataset.id, folderId);
+                    toast('Folder moved');
+                    refresh();
+                }, allFolders, el.dataset.id);
+            }));
+
+            page.querySelectorAll('.rs-delete-folder').forEach((el) => el.addEventListener('click', async (e) => {
+                e.preventDefault();
+                if (!await confirmDialog('Delete folder',
+                    `Delete folder <b>${escapeHtml(el.dataset.name)}</b> and all its subfolders? Files inside move to the trash.`,
+                    { danger: true, confirmLabel: 'Delete' })) return;
+                try {
+                    await api.deleteFolder(el.dataset.id);
+                    toast('Folder deleted');
+                    refresh();
+                } catch (err) { toast(err.message, 'err'); }
+            }));
+
+            const newFolderBtn = document.getElementById('new-folder-btn');
+            newFolderBtn?.addEventListener('click', async () => {
+                const name = prompt('Folder name:');
+                if (!name) return;
+                try {
+                    await api.createFolder(name, state.folderId);
+                    toast('Folder created');
+                    refresh();
+                } catch (err) { toast(err.message, 'err'); }
+            });
+        }
+
+        function showMoveDialog(title, action, allFolders, excludeId = null) {
+            const options = `<option value="">— root —</option>` + allFolders
+                .filter((f) => f.id !== excludeId)
+                .map((f) => `<option value="${f.id}">${escapeHtml(f.name)}</option>`).join('');
+            const element = document.createElement('div');
+            element.className = 'modal fade';
+            element.innerHTML = `
+                <div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+                    <div class="modal-header"><h5 class="modal-title">${title}</h5>
+                        <button class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+                    <div class="modal-body">
+                        <label class="form-label">Target folder</label>
+                        <select class="form-select" id="move-target">${options}</select>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                        <button class="btn btn-primary btn-sm" id="move-ok">Move</button>
+                    </div>
+                </div></div>`;
+            document.body.appendChild(element);
+            const modal = new bootstrap.Modal(element);
+            element.querySelector('#move-ok').addEventListener('click', async () => {
+                modal.hide();
+                try { await action(element.querySelector('#move-target').value || null); }
+                catch (err) { toast(err.message, 'err'); }
+            });
+            element.addEventListener('hidden.bs.modal', () => element.remove());
+            modal.show();
+        }
+
+        function showShareDialog(fileId, fileName) {
+            const element = document.createElement('div');
+            element.className = 'modal fade';
+            element.innerHTML = `
+                <div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+                    <div class="modal-header"><h5 class="modal-title">Share "${escapeHtml(fileName)}"</h5>
+                        <button class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label">Expires</label>
+                            <select class="form-select" id="share-expiry">
+                                <option value="">Never</option>
+                                <option value="1">In 1 day</option>
+                                <option value="7">In 7 days</option>
+                                <option value="30">In 30 days</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Password (optional)</label>
+                            <input class="form-control" id="share-password" maxlength="128" autocomplete="new-password">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Max downloads</label>
+                            <input class="form-control" id="share-max" type="number" min="1" max="1000000" placeholder="unlimited">
+                        </div>
+                        <div id="share-result"></div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+                        <button class="btn btn-primary btn-sm" id="share-create">Create link</button>
+                    </div>
+                </div></div>`;
+            document.body.appendChild(element);
+            const modal = new bootstrap.Modal(element);
+
+            element.querySelector('#share-create').addEventListener('click', async () => {
+                const days = element.querySelector('#share-expiry').value;
+                const body = {};
+                if (days) body.expiresAt = new Date(Date.now() + Number(days) * 86400_000).toISOString();
+                const password = element.querySelector('#share-password').value;
+                if (password) body.password = password;
+                const max = element.querySelector('#share-max').value;
+                if (max) body.maxDownloads = Number(max);
+                try {
+                    const share = await api.createShare(fileId, body);
+                    const url = `${location.origin}/s/${share.token}`;
+                    element.querySelector('#share-result').innerHTML = `
+                        <div class="rs-terminal" style="color:var(--rs-cyan);word-break:break-all">${escapeHtml(url)}</div>
+                        <div class="d-flex gap-2 mt-2">
+                            <button class="btn btn-secondary btn-sm" id="copy-link">Copy link</button>
+                        </div>`;
+                    element.querySelector('#copy-link').addEventListener('click', async () => {
+                        await navigator.clipboard.writeText(url);
+                        toast('Link copied to clipboard');
+                    });
+                } catch (err) {
+                    toast(err.message, 'err');
+                }
+            });
+
+            element.addEventListener('hidden.bs.modal', () => element.remove());
+            modal.show();
+        }
+
+        // Filters wiring
+        document.getElementById('search').addEventListener('input', debounce((e) => {
+            state.search = e.target.value.trim();
+            state.page = 1;
+            refresh();
+        }));
+        document.getElementById('type').addEventListener('change', (e) => {
+            state.type = e.target.value;
+            state.page = 1;
+            refresh();
+        });
+        document.getElementById('sort').addEventListener('change', (e) => {
+            state.sort = e.target.value;
+            state.page = 1;
+            refresh();
+        });
+        document.getElementById('order-btn').addEventListener('click', (e) => {
+            state.ascending = !state.ascending;
+            e.target.textContent = state.ascending ? '↑ asc' : '↓ desc';
+            refresh();
+        });
+
+        // Deep link ?folder=
+        const folderParam = new URLSearchParams(location.search).get('folder');
+        if (folderParam) state.folderId = folderParam;
+
+        await refresh();
+    </script>
+</body>
+</html>

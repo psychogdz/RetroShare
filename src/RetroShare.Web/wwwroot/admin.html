@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Admin — RetroShare</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/assets/css/retro.css" rel="stylesheet">
+</head>
+<body>
+    <div id="shell"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script type="module">
+        import { initShell } from '/assets/js/app.js';
+        import { api } from '/assets/js/api.js';
+        import { confirmDialog, debounce, escapeHtml, fileIcon, formatBytes, formatDate, toast } from '/assets/js/ui.js';
+
+        const user = await initShell({ permission: 'system.manage' });
+        if (!user) throw new Error('unauthenticated');
+
+        document.getElementById('page').innerHTML = `
+            <h2 class="mb-3">Admin Panel</h2>
+            <ul class="nav nav-tabs mb-3" role="tablist">
+                <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-system">System</a></li>
+                <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-users">Users</a></li>
+                <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-roles">Roles</a></li>
+                <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-permissions">Permissions</a></li>
+                <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-files">Files</a></li>
+                <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-shares">Shares</a></li>
+                <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-activity">Activity</a></li>
+            </ul>
+            <div class="tab-content">
+                <div class="tab-pane fade show active" id="tab-system"></div>
+                <div class="tab-pane fade" id="tab-users"></div>
+                <div class="tab-pane fade" id="tab-roles"></div>
+                <div class="tab-pane fade" id="tab-permissions"></div>
+                <div class="tab-pane fade" id="tab-files"></div>
+                <div class="tab-pane fade" id="tab-shares"></div>
+                <div class="tab-pane fade" id="tab-activity"></div>
+            </div>`;
+
+        /* ------------------------------ system ------------------------------ */
+        async function loadSystem() {
+            const [stats, health] = await Promise.all([
+                api.adminDashboard(),
+                fetch('/api/health').then((r) => r.json()),
+            ]);
+            const tab = document.getElementById('tab-system');
+            tab.innerHTML = `
+                <div class="row g-3 mb-3">
+                    <div class="col-6 col-md-3"><div class="rs-stat"><div class="rs-stat-value">${stats.totalUsers}</div><div class="rs-stat-label">Users</div></div></div>
+                    <div class="col-6 col-md-3"><div class="rs-stat"><div class="rs-stat-value">${stats.totalFiles}</div><div class="rs-stat-label">Files</div></div></div>
+                    <div class="col-6 col-md-3"><div class="rs-stat"><div class="rs-stat-value">${formatBytes(stats.totalBytesStored)}</div><div class="rs-stat-label">Bytes stored</div></div></div>
+                    <div class="col-6 col-md-3"><div class="rs-stat"><div class="rs-stat-value">${stats.totalShares}</div><div class="rs-stat-label">Share links</div></div></div>
+                </div>
+                <div class="rs-panel">
+                    <div class="rs-panel-title">HEALTH</div>
+                    <div class="rs-terminal">
+                        <div>status: <span style="color:${health.status === 'Healthy' ? 'var(--rs-green)' : 'var(--rs-amber)'}">${health.status}</span></div>
+                        ${Object.entries(health.entries || {}).map(([name, entry]) =>
+                            `<div class="rs-filemeta">› ${name}: ${entry.status} — ${entry.description}${entry.data?.freeBytes ? ` (free: ${formatBytes(entry.data.freeBytes)})` : ''}</div>`).join('')}
+                    </div>
+                </div>
+                <div class="rs-panel mt-3">
+                    <div class="rs-panel-title">RECENT SYSTEM ACTIVITY</div>
+                    <div class="rs-terminal">
+                        ${stats.recentActivity.map((entry) =>
+                            `<div><span style="color:#6d7f99">[${formatDate(entry.createdAt)}]</span> ${entry.username ? escapeHtml(entry.username) + ': ' : ''}${escapeHtml(entry.description)}</div>`).join('')}
+                    </div>
+                </div>`;
+        }
+
+        /* ------------------------------ users ------------------------------ */
+        const usersState = { search: '', page: 1 };
+        async function loadUsers() {
+            const params = new URLSearchParams({ search: usersState.search, page: usersState.page, pageSize: 15 });
+            const [result, roles] = await Promise.all([api.users(`?${params}`), api.roles()]);
+            const tab = document.getElementById('tab-users');
+            tab.innerHTML = `
+                <div class="rs-panel mb-3">
+                    <div class="row g-2 align-items-end">
+                        <div class="col-md-5">
+                            <label class="form-label">Search</label>
+                            <input class="form-control form-control-sm" id="user-search" value="${escapeHtml(usersState.search)}" placeholder="username, email, name…" maxlength="128">
+                        </div>
+                        <div class="col-md-7 rs-filemeta">roles in system: ${roles.length} · users: ${result.total}</div>
+                    </div>
+                </div>
+                <div class="table-responsive rs-panel">
+                    <table class="table mb-0 align-middle">
+                        <thead><tr><th>User</th><th>Roles</th><th>Storage</th><th>Status</th><th>Last login</th><th></th></tr></thead>
+                        <tbody>
+                            ${result.items.map((u) => `
+                                <tr data-id="${u.id}">
+                                    <td>
+                                        <div class="rs-filename">${escapeHtml(u.username)}${u.id === user.id ? ' <span class="badge rs-badge-dim">you</span>' : ''}</div>
+                                        <div class="rs-filemeta">${escapeHtml(u.email)} · ${escapeHtml(u.displayName)}</div>
+                                    </td>
+                                    <td>${u.roles.map((role) => `<span class="badge rs-badge-cyan me-1">${escapeHtml(role)}</span>`).join('')}</td>
+                                    <td class="rs-filemeta">${formatBytes(u.storageUsedBytes)} / ${formatBytes(u.storageQuotaBytes)}</td>
+                                    <td>${u.isDisabled ? '<span class="badge rs-badge-red">disabled</span>' : '<span class="badge rs-badge-green">active</span>'}</td>
+                                    <td class="rs-filemeta">${formatDate(u.lastLoginAt)}</td>
+                                    <td class="text-nowrap">
+                                        <button class="btn btn-sm btn-outline-secondary rs-edit-user" data-id="${u.id}">Edit</button>
+                                        ${u.id !== user.id ? `<button class="btn btn-sm btn-danger rs-del-user" data-id="${u.id}" data-name="${escapeHtml(u.username)}">Del</button>` : ''}
+                                    </td>
+                                </tr>`).join('')}
+                        </tbody>
+                    </table>
+                </div>`;
+
+            tab.querySelector('#user-search').addEventListener('input', debounce((e) => {
+                usersState.search = e.target.value.trim();
+                usersState.page = 1;
+                loadUsers();
+            }));
+
+            tab.querySelectorAll('.rs-edit-user').forEach((el) => el.addEventListener('click', () =>
+                showUserEditor(result.items.find((u) => u.id === el.dataset.id), roles)));
+
+            tab.querySelectorAll('.rs-del-user').forEach((el) => el.addEventListener('click', async () => {
+                if (!await confirmDialog('Delete user',
+                    `Permanently delete <b>${el.dataset.name}</b> and ALL their files, folders and shares?`,
+                    { danger: true, confirmLabel: 'Delete user' })) return;
+                try {
+                    await api.deleteUser(el.dataset.id);
+                    toast('User deleted');
+                    loadUsers();
+                } catch (err) { toast(err.message, 'err'); }
+            }));
+        }
+
+        function showUserEditor(target, roles) {
+            const element = document.createElement('div');
+            element.className = 'modal fade';
+            const quotaGb = (target.storageQuotaBytes / 1024 ** 3).toFixed(1);
+            element.innerHTML = `
+                <div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+                    <div class="modal-header"><h5 class="modal-title">Edit ${escapeHtml(target.username)}</h5>
+                        <button class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label">Display name</label>
+                            <input class="form-control form-control-sm" id="edit-name" value="${escapeHtml(target.displayName)}" maxlength="64">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Quota (GB)</label>
+                            <input class="form-control form-control-sm" id="edit-quota" type="number" min="0" step="0.5" value="${quotaGb}">
+                            <div class="rs-filemeta">current usage: ${formatBytes(target.storageUsedBytes)}</div>
+                        </div>
+                        <div class="mb-3 form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="edit-disabled" ${target.isDisabled ? 'checked' : ''}>
+                            <label class="form-check-label rs-filemeta" for="edit-disabled">Disabled (blocks login, revokes sessions)</label>
+                        </div>
+                        <hr>
+                        <label class="form-label">Roles</label>
+                        ${roles.map((role) => `
+                            <div class="form-check">
+                                <input class="form-check-input rs-role-check" type="checkbox" value="${role.id}" id="role-${role.id}"
+                                    ${target.roles.includes(role.name) ? 'checked' : ''}>
+                                <label class="form-check-label rs-filemeta" for="role-${role.id}">
+                                    ${escapeHtml(role.name)} <span class="rs-filemeta">(${role.permissions.length} perms, ${role.userCount} users)</span>
+                                </label>
+                            </div>`).join('')}
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                        <button class="btn btn-primary btn-sm" id="edit-save">Save</button>
+                    </div>
+                </div></div>`;
+            document.body.appendChild(element);
+            const modal = new bootstrap.Modal(element);
+
+            element.querySelector('#edit-save').addEventListener('click', async () => {
+                const gb = Number(element.querySelector('#edit-quota').value);
+                const body = {
+                    displayName: element.querySelector('#edit-name').value.trim(),
+                    isDisabled: element.querySelector('#edit-disabled').checked,
+                    storageQuotaBytes: Math.round(gb * 1024 ** 3),
+                };
+                const roleIds = [...element.querySelectorAll('.rs-role-check:checked')].map((c) => Number(c.value));
+                try {
+                    await api.updateUser(target.id, body);
+                    if (roleIds.length) await api.setUserRoles(target.id, roleIds);
+                    toast('User updated');
+                    modal.hide();
+                    loadUsers();
+                } catch (err) { toast(err.message, 'err'); }
+            });
+
+            element.addEventListener('hidden.bs.modal', () => element.remove());
+            modal.show();
+        }
+
+        /* ------------------------------ roles & permissions ------------------------------ */
+        async function loadRoles() {
+            const [roles, permissions] = await Promise.all([api.roles(), api.permissions()]);
+            const tab = document.getElementById('tab-roles');
+            tab.innerHTML = `
+                <div class="d-flex justify-content-end mb-2">
+                    <button class="btn btn-primary btn-sm" id="new-role">+ New role</button>
+                </div>
+                <div class="row g-2">
+                    ${roles.map((role) => `
+                        <div class="col-12 col-md-6 col-xl-4">
+                            <div class="rs-panel h-100">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <div class="rs-filename">${escapeHtml(role.name)}
+                                            ${role.isSystem ? '<span class="badge rs-badge-amber ms-1">system</span>' : ''}</div>
+                                        <div class="rs-filemeta">${escapeHtml(role.description || '—')}</div>
+                                    </div>
+                                    <div class="text-nowrap">
+                                        <button class="btn btn-sm btn-outline-secondary rs-edit-role" data-id="${role.id}">Edit</button>
+                                        ${!role.isSystem ? `<button class="btn btn-sm btn-danger rs-del-role" data-id="${role.id}" data-name="${escapeHtml(role.name)}">Del</button>` : ''}
+                                    </div>
+                                </div>
+                                <hr style="border-color:var(--rs-border)">
+                                <div class="rs-filemeta mb-1">${role.permissions.length} permissions · ${role.userCount} user(s)</div>
+                                <div class="d-flex flex-wrap gap-1">
+                                    ${role.permissions.map((permission) => `<span class="badge rs-badge-dim">${escapeHtml(permission)}</span>`).join('')}
+                                </div>
+                            </div>
+                        </div>`).join('')}
+                </div>`;
+
+            const openEditor = (role) => {
+                const element = document.createElement('div');
+                element.className = 'modal fade';
+                const categories = [...new Set(permissions.map((p) => p.category))];
+                element.innerHTML = `
+                    <div class="modal-dialog modal-dialog-centered modal-lg"><div class="modal-content">
+                        <div class="modal-header"><h5 class="modal-title">${role ? 'Edit role' : 'New role'}</h5>
+                            <button class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+                        <div class="modal-body">
+                            <div class="row g-2 mb-3">
+                                <div class="col-6">
+                                    <label class="form-label">Name</label>
+                                    <input class="form-control form-control-sm" id="role-name" value="${role ? escapeHtml(role.name) : ''}" maxlength="64" ${role?.isSystem ? 'disabled' : ''}>
+                                </div>
+                                <div class="col-6">
+                                    <label class="form-label">Description</label>
+                                    <input class="form-control form-control-sm" id="role-desc" value="${role ? escapeHtml(role.description) : ''}" maxlength="256">
+                                </div>
+                            </div>
+                            <label class="form-label">Permissions</label>
+                            ${categories.map((category) => `
+                                <div class="mb-2">
+                                    <div class="rs-filemeta mb-1">${escapeHtml(category.toUpperCase())}</div>
+                                    ${permissions.filter((p) => p.category === category).map((p) => `
+                                        <div class="form-check">
+                                            <input class="form-check-input rs-perm-check" type="checkbox" value="${p.id}" id="perm-${p.id}"
+                                                ${role?.permissions?.includes(p.name) ? 'checked' : ''}>
+                                            <label class="form-check-label rs-filemeta" for="perm-${p.id}">${escapeHtml(p.name)} — ${escapeHtml(p.description)}</label>
+                                        </div>`).join('')}
+                                </div>`).join('')}
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                            <button class="btn btn-primary btn-sm" id="role-save">Save role</button>
+                        </div>
+                    </div></div>`;
+                document.body.appendChild(element);
+                const modal = new bootstrap.Modal(element);
+                element.querySelector('#role-save').addEventListener('click', async () => {
+                    const name = element.querySelector('#role-name').value.trim();
+                    const description = element.querySelector('#role-desc').value.trim();
+                    const permissionIds = [...element.querySelectorAll('.rs-perm-check:checked')].map((c) => Number(c.value));
+                    try {
+                        if (role) {
+                            await api.updateRole(role.id, { description, permissionIds, ...(role.isSystem ? {} : { name }) });
+                        } else {
+                            if (!name) throw new Error('Name required');
+                            await api.createRole({ name, description, permissionIds });
+                        }
+                        toast('Role saved');
+                        modal.hide();
+                        loadRoles();
+                    } catch (err) { toast(err.message, 'err'); }
+                });
+                element.addEventListener('hidden.bs.modal', () => element.remove());
+                modal.show();
+            };
+
+            tab.querySelector('#new-role').addEventListener('click', () => openEditor(null));
+            tab.querySelectorAll('.rs-edit-role').forEach((el) => el.addEventListener('click', () =>
+                openEditor(roles.find((r) => r.id === Number(el.dataset.id)))));
+            tab.querySelectorAll('.rs-del-role').forEach((el) => el.addEventListener('click', async () => {
+                if (!await confirmDialog('Delete role', `Delete role <b>${el.dataset.name}</b>?`, { danger: true, confirmLabel: 'Delete' })) return;
+                try {
+                    await api.deleteRole(Number(el.dataset.id));
+                    toast('Role deleted');
+                    loadRoles();
+                } catch (err) { toast(err.message, 'err'); }
+            }));
+        }
+
+        async function loadPermissions() {
+            const permissions = await api.permissions();
+            const categories = [...new Set(permissions.map((p) => p.category))];
+            document.getElementById('tab-permissions').innerHTML = `
+                <div class="rs-panel">
+                    <div class="rs-filemeta mb-2">Permissions are stored in the database and granted to roles —
+                    nothing here is hard-coded in the controllers.</div>
+                    ${categories.map((category) => `
+                        <div class="mb-3">
+                            <div class="rs-panel-title mb-1">${escapeHtml(category.toUpperCase())}</div>
+                            ${permissions.filter((p) => p.category === category).map((p) => `
+                                <div class="d-flex gap-2 align-items-baseline">
+                                    <code style="min-width:190px">${escapeHtml(p.name)}</code>
+                                    <span class="rs-filemeta">${escapeHtml(p.description)}</span>
+                                </div>`).join('')}
+                        </div>`).join('')}
+                </div>`;
+        }
+
+        /* ------------------------------ files / shares / activity ------------------------------ */
+        const filesState = { search: '', page: 1 };
+        async function loadFiles() {
+            const params = new URLSearchParams({ search: filesState.search, page: filesState.page, pageSize: 15, includeDeleted: 'true' });
+            const result = await api.adminFiles(`?${params}`);
+            const tab = document.getElementById('tab-files');
+            tab.innerHTML = `
+                <div class="rs-panel mb-3">
+                    <input class="form-control form-control-sm" id="file-search" value="${escapeHtml(filesState.search)}" placeholder="search all files…" maxlength="128">
+                </div>
+                <div class="table-responsive rs-panel">
+                    <table class="table mb-0 align-middle">
+                        <thead><tr><th></th><th>File</th><th>Owner</th><th>Size</th><th>Status</th><th>Downloads</th><th>Created</th><th></th></tr></thead>
+                        <tbody>
+                            ${result.items.map((file) => `
+                                <tr>
+                                    <td>${fileIcon(file.extension)}</td>
+                                    <td><div class="rs-filename">${escapeHtml(file.name)}</div></td>
+                                    <td class="rs-filemeta">${escapeHtml(file.ownerUsername ?? '—')}</td>
+                                    <td class="rs-filemeta">${formatBytes(file.size)}</td>
+                                    <td>${file.isDeleted ? '<span class="badge rs-badge-red">trashed</span>' : '<span class="badge rs-badge-green">active</span>'}</td>
+                                    <td class="rs-filemeta">${file.downloadCount}</td>
+                                    <td class="rs-filemeta">${formatDate(file.createdAt)}</td>
+                                    <td><button class="btn btn-sm btn-danger rs-admin-del" data-id="${file.id}" data-name="${escapeHtml(file.name)}">Delete</button></td>
+                                </tr>`).join('')}
+                        </tbody>
+                    </table>
+                </div>`;
+            tab.querySelector('#file-search').addEventListener('input', debounce((e) => {
+                filesState.search = e.target.value.trim();
+                filesState.page = 1;
+                loadFiles();
+            }));
+            tab.querySelectorAll('.rs-admin-del').forEach((el) => el.addEventListener('click', async () => {
+                if (!await confirmDialog('Delete file', `Permanently delete <b>${el.dataset.name}</b>?`, { danger: true, confirmLabel: 'Delete' })) return;
+                try {
+                    await api.deleteFile(el.dataset.id, true);
+                    toast('File deleted');
+                    loadFiles();
+                } catch (err) { toast(err.message, 'err'); }
+            }));
+        }
+
+        const sharesState = { page: 1 };
+        async function loadShares() {
+            const result = await api.sharesAll(sharesState.page);
+            document.getElementById('tab-shares').innerHTML = `
+                <div class="table-responsive rs-panel">
+                    <table class="table mb-0 align-middle">
+                        <thead><tr><th>File</th><th>Token</th><th>Protection</th><th>Downloads</th><th>Status</th><th>Created</th><th></th></tr></thead>
+                        <tbody>
+                            ${result.items.map((share) => `
+                                <tr>
+                                    <td><div class="rs-filename">${escapeHtml(share.fileName)}</div><div class="rs-filemeta">${formatBytes(share.fileSize)}</div></td>
+                                    <td><code style="font-size:.78rem">${escapeHtml(share.token.slice(0, 10))}…</code></td>
+                                    <td>${share.hasPassword ? '<span class="badge rs-badge-cyan">password</span>' : '<span class="rs-filemeta">public</span>'}</td>
+                                    <td class="rs-filemeta">${share.downloadCount}${share.maxDownloads !== null ? ` / ${share.maxDownloads}` : ''}</td>
+                                    <td>${share.isActive ? '<span class="badge rs-badge-green">active</span>' : '<span class="badge rs-badge-dim">revoked</span>'}</td>
+                                    <td class="rs-filemeta">${formatDate(share.createdAt)}</td>
+                                    <td>${share.isActive ? `<button class="btn btn-sm btn-danger rs-admin-revoke" data-id="${share.id}">Revoke</button>` : ''}</td>
+                                </tr>`).join('')}
+                        </tbody>
+                    </table>
+                </div>`;
+            document.querySelectorAll('#tab-shares .rs-admin-revoke').forEach((el) => el.addEventListener('click', async () => {
+                try {
+                    await api.revokeShare(el.dataset.id);
+                    toast('Share revoked');
+                    loadShares();
+                } catch (err) { toast(err.message, 'err'); }
+            }));
+        }
+
+        async function loadActivity() {
+            const result = await api.activityAll('?pageSize=40');
+            document.getElementById('tab-activity').innerHTML = `
+                <div class="rs-terminal" style="min-height:300px">
+                    ${result.items.map((entry) =>
+                        `<div><span style="color:#6d7f99">[${formatDate(entry.createdAt)}]</span> ${entry.username ? escapeHtml(entry.username) + ' — ' : ''}${escapeHtml(entry.description)} <span style="color:#46536a">(${entry.action})</span></div>`).join('')}
+                </div>`;
+        }
+
+        // Lazy-load tabs on first activation so the initial paint stays fast.
+        const loaders = {
+            'tab-system': loadSystem, 'tab-users': loadUsers, 'tab-roles': loadRoles,
+            'tab-permissions': loadPermissions, 'tab-files': loadFiles, 'tab-shares': loadShares,
+            'tab-activity': loadActivity,
+        };
+        const loaded = new Set();
+        document.querySelector('#page .nav-tabs').addEventListener('shown.bs.tab', (event) => {
+            const id = event.target.getAttribute('href').slice(1);
+            loaders[id]?.();
+        });
+        loadSystem(); // default tab
+    </script>
+</body>
+</html>

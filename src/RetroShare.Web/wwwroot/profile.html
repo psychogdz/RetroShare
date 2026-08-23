@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Profile — RetroShare</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/assets/css/retro.css" rel="stylesheet">
+</head>
+<body>
+    <div id="shell"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script type="module">
+        import { initShell } from '/assets/js/app.js';
+        import { api, Auth } from '/assets/js/api.js';
+        import { escapeHtml, formatBytes, formatDate, toast } from '/assets/js/ui.js';
+
+        const user = await initShell({ permission: 'profile.view' });
+        if (!user) throw new Error('unauthenticated');
+
+        document.getElementById('page').innerHTML = `
+            <h2 class="mb-4">Profile</h2>
+            <div class="row g-3">
+                <div class="col-lg-6">
+                    <div class="rs-panel h-100">
+                        <div class="rs-panel-title">ACCOUNT</div>
+                        <table class="table table-sm">
+                            <tbody>
+                                <tr><th>Username</th><td>${escapeHtml(user.username)}</td></tr>
+                                <tr><th>Email</th><td>${escapeHtml(user.email)}</td></tr>
+                                <tr><th>Roles</th><td>${user.roles.map((role) => `<span class="badge rs-badge-cyan me-1">${escapeHtml(role)}</span>`).join('')}</td></tr>
+                                <tr><th>Member since</th><td>${formatDate(user.createdAt)}</td></tr>
+                                <tr><th>Last login</th><td>${formatDate(user.lastLoginAt)}</td></tr>
+                            </tbody>
+                        </table>
+                        <hr style="border-color:var(--rs-border)">
+                        <form id="name-form">
+                            <label class="form-label" for="displayName">Display name</label>
+                            <div class="d-flex gap-2">
+                                <input class="form-control form-control-sm" id="displayName" value="${escapeHtml(user.displayName)}" maxlength="64" required>
+                                <button class="btn btn-primary btn-sm" type="submit">Save</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                <div class="col-lg-6">
+                    <div class="rs-panel h-100">
+                        <div class="rs-panel-title">STORAGE</div>
+                        <div class="rs-meter mb-2"><div class="rs-meter-fill" style="width:${Math.min(100, user.storageQuotaBytes ? user.storageUsedBytes / user.storageQuotaBytes * 100 : 0).toFixed(1)}%"></div></div>
+                        <div class="rs-filemeta">${formatBytes(user.storageUsedBytes)} of ${formatBytes(user.storageQuotaBytes)} used</div>
+                        <hr style="border-color:var(--rs-border)">
+                        <div class="rs-panel-title">CHANGE PASSWORD</div>
+                        <form id="password-form">
+                            <div class="mb-2">
+                                <label class="form-label" for="current">Current password</label>
+                                <input class="form-control form-control-sm" id="current" type="password" autocomplete="current-password" required maxlength="128">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label" for="next">New password</label>
+                                <input class="form-control form-control-sm" id="next" type="password" autocomplete="new-password" required minlength="8" maxlength="128">
+                                <div class="rs-filemeta">Changing the password logs out every session.</div>
+                            </div>
+                            <button class="btn btn-primary btn-sm" type="submit">Change password</button>
+                        </form>
+                    </div>
+                </div>
+                <div class="col-12">
+                    <div class="rs-panel">
+                        <div class="rs-panel-title">PERMISSIONS (${user.permissions.length})</div>
+                        <div class="d-flex flex-wrap gap-1">
+                            ${user.permissions.map((permission) => `<span class="badge rs-badge-dim">${escapeHtml(permission)}</span>`).join('')}
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+
+        document.getElementById('name-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            try {
+                const updated = await api.updateProfile(document.getElementById('displayName').value.trim());
+                Auth.setUser(updated);
+                toast('Profile updated');
+            } catch (err) { toast(err.message, 'err'); }
+        });
+
+        document.getElementById('password-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            try {
+                await api.changePassword(
+                    document.getElementById('current').value,
+                    document.getElementById('next').value);
+                toast('Password changed — logging out…');
+                Auth.clear();
+                setTimeout(() => (window.location.href = '/login.html'), 1200);
+            } catch (err) { toast(err.message, 'err'); }
+        });
+    </script>
+</body>
+</html>

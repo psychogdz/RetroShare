@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>RetroShare — File sharing with a soul</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/assets/css/retro.css" rel="stylesheet">
+</head>
+<body>
+    <nav class="navbar px-3 px-md-4 py-3" style="border-bottom:1px solid var(--rs-border)">
+        <div class="container-fluid px-0">
+            <a class="rs-logo" href="/"><span class="rs-block"></span>RetroShare</a>
+            <div class="d-flex gap-2 ms-auto" id="nav-actions"></div>
+        </div>
+    </nav>
+
+    <section class="rs-hero">
+        <div class="rs-terminal mx-auto mb-4" style="max-width:520px;text-align:left">
+            <div class="rs-prompt">retroshare --upload project.zip</div>
+            <div>██████████████████░░░░ 82%</div>
+            <div class="rs-filemeta">3.1 GB / 3.8 GB &nbsp; speed 18.4 MB/s &nbsp; eta 39s</div>
+        </div>
+        <h1>SHARE FILES LIKE IT'S 1995</h1>
+        <p>
+            A modern file-sharing platform with a retro soul: streaming uploads over gRPC,
+            expiring password-protected share links, storage quotas, and a full role &amp;
+            permission engine — all wrapped in a CRT-inspired interface.
+        </p>
+        <div class="d-flex gap-2 justify-content-center flex-wrap" id="cta"></div>
+    </section>
+
+    <main class="container pb-5">
+        <div class="row g-3">
+            <div class="col-md-4">
+                <div class="rs-panel h-100">
+                    <div class="rs-panel-title">▶ STREAMED TRANSFERS</div>
+                    <p class="rs-filemeta">Files move over a gRPC data plane in 64 KB chunks — huge files
+                    never buffer in memory, and the UI shows live progress, speed and ETA.</p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="rs-panel h-100">
+                    <div class="rs-panel-title">⇄ SMART SHARING</div>
+                    <p class="rs-filemeta">Public links with expiration dates, optional passwords and
+                    download limits. Revoke anything, any time. Tokens are cryptographic, never sequential.</p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="rs-panel h-100">
+                    <div class="rs-panel-title">⚙ ROLES + PERMISSIONS</div>
+                    <p class="rs-filemeta">A real authorization engine: roles bundle database-stored
+                    permissions, policies check permissions — nothing is hard-coded to an "admin" string.</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script type="module">
+        import { Auth } from '/assets/js/api.js';
+
+        const actions = document.getElementById('nav-actions');
+        const cta = document.getElementById('cta');
+        if (Auth.isAuthenticated) {
+            actions.innerHTML = '<a class="btn btn-primary btn-sm" href="/dashboard.html">Open app ▸</a>';
+            cta.innerHTML = '<a class="btn btn-primary" href="/dashboard.html">Go to dashboard</a>';
+        } else {
+            actions.innerHTML = `
+                <a class="btn btn-secondary btn-sm" href="/login.html">Log in</a>
+                <a class="btn btn-primary btn-sm" href="/register.html">Register</a>`;
+            cta.innerHTML = `
+                <a class="btn btn-primary" href="/register.html">Create account</a>
+                <a class="btn btn-secondary" href="/login.html">I have an account</a>`;
+        }
+    </script>
+</body>
+</html>
