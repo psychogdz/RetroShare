@@ -12,33 +12,10 @@ Bootstrap and vanilla JavaScript.
 ▀▀▀▀▀▀▀ ▀▀▀▀▀▀ ▀▀▀▀▀▀ ▀▀▀▀▀▀ ▀▀   ▀ ▀▀▀▀▀▀ ▀▀▀  ▀▀▀   ▀▀   ▀▀▀▀▀▀ ▀▀▀  ▀▀▀▀▀▀
 ```
 
-## Screenshots
-
-All screenshots are captured from the running application.
-
-### Login
-![Login](docs/screenshots/login.png)
-
-### Dashboard
-![Dashboard](docs/screenshots/dashboard.png)
-
-### File manager
-![File manager](docs/screenshots/files.png)
-
-### Upload with live transfer status
-![Upload with live transfer status](docs/screenshots/upload.png)
-
-### Public share page (no login required)
-![Public share page](docs/screenshots/share.png)
-
-### Admin panel — system health
-![Admin panel — system health](docs/screenshots/admin.png)
-
-### Admin panel — users
-![Admin panel — users](docs/screenshots/admin-users.png)
-
-### Admin panel — roles & permissions
-![Admin panel — roles & permissions](docs/screenshots/admin-roles.png)
+[![Tests](https://img.shields.io/badge/tests-93%2F93%20passing-brightgreen)](README.md#testing)
+[![Docker](https://img.shields.io/badge/docker-ready-blue)](README.md#docker)
+[![Release](https://img.shields.io/badge/release-v1.0.0-8A2BE2)](docs/RELEASE-v1.0.0.md)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 
 ## Features
 
@@ -105,6 +82,34 @@ All screenshots are captured from the running application.
 ASP.NET Core 9 · C# · EF Core 9 + SQLite (migrations) · JWT + refresh tokens ·
 gRPC + gRPC-Web · Serilog · Swashbuckle · xUnit · Bootstrap 5 + vanilla JavaScript
 (ES modules, no build step)
+
+## Screenshots
+
+All screenshots are captured from the running application.
+
+### Login
+![Login](docs/screenshots/login.png)
+
+### Dashboard
+![Dashboard](docs/screenshots/dashboard.png)
+
+### File manager
+![File manager](docs/screenshots/files.png)
+
+### Upload with live transfer status
+![Upload with live transfer status](docs/screenshots/upload.png)
+
+### Public share page (no login required)
+![Public share page](docs/screenshots/share.png)
+
+### Admin panel — system health
+![Admin panel — system health](docs/screenshots/admin.png)
+
+### Admin panel — users
+![Admin panel — users](docs/screenshots/admin-users.png)
+
+### Admin panel — roles & permissions
+![Admin panel — roles & permissions](docs/screenshots/admin-roles.png)
 
 ## Database overview
 
