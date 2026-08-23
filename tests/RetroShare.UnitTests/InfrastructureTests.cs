@@ -87,8 +87,17 @@ public class LocalFileStoragePathTests : IDisposable
     [InlineData("../../etc/passwd")]
     [InlineData("..\\..\\windows\\system32\\config")]
     [InlineData("users/../../secrets")]
-    public async Task Rejects_PathTraversal(string relativePath) =>
+    public async Task Rejects_PathTraversal(string relativePath)
+    {
+        // A backslash only separates path components on Windows; on Unix the
+        // payload stays inside the root and the guard rightly accepts it.
+        if (!OperatingSystem.IsWindows() && relativePath.Contains('\\'))
+        {
+            return;
+        }
+
         await Assert.ThrowsAnyAsync<Exception>(() => _storage.OpenWriteAsync(relativePath));
+    }
 
     [Fact]
     public async Task Delete_RemovesBlob_AndReportsMissing()
