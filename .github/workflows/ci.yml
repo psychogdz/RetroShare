@@ -25,7 +25,7 @@ jobs:
         run: dotnet build RetroShare.sln --no-restore -c Release
 
       - name: Test
-        run: dotnet test RetroShare.sln --no-build -c Release --logger "github;summary=true"
+        run: dotnet test RetroShare.sln --no-build -c Release
 
       - name: Publish (build verification)
         run: dotnet publish src/RetroShare.API/RetroShare.API.csproj -c Release -o publish --no-build
