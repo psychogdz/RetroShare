@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+option csharp_namespace = "RetroShare.Infrastructure.Grpc";
+
+package filetransfer;
+
+// Streaming data plane for file upload/download. The control plane (metadata, auth, sharing)
+// lives in the REST API; this service only moves bytes.
+service FileTransfer {
+  // Client-streaming upload: the first message must carry init metadata, all following
+  // messages carry raw chunks.
+  rpc Upload (stream UploadRequest) returns (UploadResponse);
+
+  // Server-streaming download: the first message carries metadata, all following messages
+  // carry raw chunks. Authenticate either with a bearer token (owner download) or with a
+  // share token (+ optional share password).
+  rpc Download (DownloadRequest) returns (stream DownloadResponse);
+}
+
+message UploadInit {
+  string file_name = 1;   // original display name (sanitized server-side)
+  int64 size = 2;         // declared size in bytes, verified after transfer
+  string mime_type = 3;   // optional; defaults to application/octet-stream
+  string folder_id = 4;   // optional target folder id (GUID string, empty = root)
+}
+
+message UploadRequest {
+  UploadInit init = 1;    // present only in the first message
+  bytes chunk = 2;        // raw file bytes
+}
+
+message UploadResponse {
+  string file_id = 1;     // GUID of the created file record
+  int64 total_bytes = 2;  // bytes persisted
+}
+
+message DownloadRequest {
+  string file_id = 1;         // owner/admin download: GUID of the file
+  string share_token = 2;     // anonymous share download: public token
+  string share_password = 3;  // password for protected shares
+}
+
+message DownloadMeta {
+  string file_name = 1;
+  int64 size = 2;
+  string mime_type = 3;
+}
+
+message DownloadResponse {
+  DownloadMeta meta = 1;  // present only in the first message
+  bytes chunk = 2;        // raw file bytes
+}
