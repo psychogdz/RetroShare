@@ -15,7 +15,7 @@ artifacts/
 *.db
 *.db-shm
 *.db-wal
-storage/
+/src/RetroShare.API/storage/
 logs/
 
 # Local configuration & secrets
