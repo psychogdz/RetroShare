@@ -1,0 +1,2 @@
+# Placeholder: in development and CI the frontend is served from ../RetroShare.Web/wwwroot
+# (see Program.cs). Published builds copy that folder into this directory's place.
