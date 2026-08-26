@@ -6,10 +6,12 @@ engine, and a CRT-inspired interface — built with ASP.NET Core, EF Core + SQLi
 Bootstrap and vanilla JavaScript.
 
 ```
-██▄ ▄██ ▄▄▄▄▄  ▄██▄  ▄▄▄ ▄ ▄▄   ▄▄▄▄  ▄▄▄                    ▄▄
-███ ▀██ ▀▀███  ▀███  █▄▄▄█ ▀▄█▀▄█ ▄▄▄█▀ █▄▄▀ ▄▄▄ ▄▄▄▄▄  ▄▄▄▄▄  █▄▄█ ▄▄▄ ▄▄▄
-███▄▄▀█ ▄▄███  ▄███▄ █▄▄▄█  ██▀█ ▀█▄▄▄  █  █ █▄▄█ ▀▀█▀▀ ▀▀███  █▄▄▀ ██▄▄█▀▀█
-▀▀▀▀▀▀▀ ▀▀▀▀▀▀ ▀▀▀▀▀▀ ▀▀▀▀▀▀ ▀▀   ▀ ▀▀▀▀▀▀ ▀▀▀  ▀▀▀   ▀▀   ▀▀▀▀▀▀ ▀▀▀  ▀▀▀▀▀▀
+██████╗ ███████╗████████╗██████╗  ██████╗ ███████╗
+██╔══██╗██╔════╝╚══██╔══╝██╔══██╗██╔═══██╗██╔════╝
+██████╔╝█████╗     ██║   ██████╔╝██║   ██║███████╗
+██╔══██╗██╔══╝     ██║   ██╔══██╗██║   ██║╚════██║
+██║  ██║███████╗   ██║   ██║  ██║╚██████╔╝███████║
+╚═╝  ╚═╝╚══════╝   ╚═╝   ╚═╝  ╚═╝ ╚═════╝ ╚══════╝
 ```
 
 [![Tests](https://img.shields.io/badge/tests-93%2F93%20passing-brightgreen)](README.md#testing)
@@ -19,24 +21,24 @@ Bootstrap and vanilla JavaScript.
 
 ## Features
 
-- **Accounts & sessions** — registration, login, short-lived JWT access tokens,
+- **Accounts & sessions**  registration, login, short-lived JWT access tokens,
   rotating + revocable refresh tokens, PBKDF2 password hashing, rate-limited auth.
-- **Files** — upload/download/rename/move/search/sort/filter, details, trash with
+- **Files**  upload/download/rename/move/search/sort/filter, details, trash with
   restore, permanent delete. Uploads and downloads stream over **gRPC** (with
-  gRPC-Web for the browser) in 64 KB chunks — large files never buffer in memory.
-- **Folders** — per-owner trees with breadcrumbs, cycle-safe moves, recursive soft
+  gRPC-Web for the browser) in 64 KB chunks  large files never buffer in memory.
+- **Folders**  per-owner trees with breadcrumbs, cycle-safe moves, recursive soft
   delete that trashes contained files.
-- **Sharing** — public links (`/s/{token}`) with expiration, optional passwords,
+- **Sharing**  public links (`/s/{token}`) with expiration, optional passwords,
   download limits, enable/disable and revocation. Cryptographically random tokens.
-- **Quotas** — per-user storage quotas enforced server-side, with usage meters in
+- **Quotas**  per-user storage quotas enforced server-side, with usage meters in
   the UI.
-- **Dashboard** — file/storage/share statistics, quota bar, recent files and a
+- **Dashboard**  file/storage/share statistics, quota bar, recent files and a
   terminal-style activity feed.
-- **Admin panel** — manage users (disable, reassign roles, quotas, delete),
+- **Admin panel**  manage users (disable, reassign roles, quotas, delete),
   roles &amp; permissions (create custom roles live), moderate all files and share
   links, system health.
-- **Activity log** — auditable trail of every important action.
-- **Retro UI** — monospace/pixel CRT aesthetic on Bootstrap 5, fully responsive
+- **Activity log**  auditable trail of every important action.
+- **Retro UI**  monospace/pixel CRT aesthetic on Bootstrap 5, fully responsive
   from 360 px to 1920 px, no frontend framework.
 
 ## Architecture
@@ -61,9 +63,9 @@ Bootstrap and vanilla JavaScript.
                                     └─────────────────────────────────┘
 ```
 
-- **Control plane** — REST over `ApiController`s: auth, users, files/folders
+- **Control plane**  REST over `ApiController`s: auth, users, files/folders
   metadata, sharing, admin, dashboard. DTOs only, never EF entities.
-- **Data plane** — a dedicated gRPC `FileTransfer` service (`Upload` client-streaming,
+- **Data plane**  a dedicated gRPC `FileTransfer` service (`Upload` client-streaming,
   `Download` server-streaming). Enabled for gRPC-Web so the vanilla-JS frontend
   speaks it directly with a tiny hand-rolled protobuf codec (`assets/js/grpc.js`).
 
